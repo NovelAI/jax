@@ -289,6 +289,48 @@ def get_compile_options(
   return compile_options
 
 
+def serialize_autotune_results(as_textproto: bool = False) -> bytes:
+  """Serializes the in-memory XLA GPU autotuning cache to bytes.
+
+  Returns the cache as a binary protobuf (or textproto if ``as_textproto`` is
+  True).  The bytes can be saved and later reloaded with
+  :func:`load_autotune_results` to skip re-running autotuning.
+
+  Args:
+    as_textproto: If True, return human-readable textproto instead of binary.
+
+  Returns:
+    Serialized ``AutotuneResults`` proto as bytes.
+  """
+  return _jax.serialize_autotune_results(as_textproto)
+
+
+def load_autotune_results(
+    data: bytes,
+    as_textproto: bool = False,
+    allow_override: bool = False,
+) -> None:
+  """Loads XLA GPU autotuning results into the in-memory cache.
+
+  Does not erase existing cache entries; new entries are merged in.  If XLA
+  encounters an operation not covered by the loaded data it will autotune it
+  normally.
+
+  Args:
+    data: Serialized ``AutotuneResults`` proto, as returned by
+      :func:`serialize_autotune_results`.
+    as_textproto: Set to True if ``data`` is in textproto format.
+    allow_override: If True, silently overwrite duplicate cache entries.
+      If False (default), a duplicate key raises an error.
+  """
+  _jax.load_autotune_results(data, as_textproto, allow_override)
+
+
+def clear_autotune_results() -> None:
+  """Clears the in-memory XLA GPU autotuning cache."""
+  _jax.clear_autotune_results()
+
+
 @profiler.annotate_function
 def backend_compile_and_load(
     backend: xc.Client,

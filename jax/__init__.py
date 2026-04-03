@@ -93,6 +93,9 @@ from jax._src.ad_checkpoint import checkpoint as checkpoint
 from jax._src.ad_checkpoint import checkpoint_policies as checkpoint_policies
 from jax._src.ad_checkpoint import remat as remat
 from jax._src.api import clear_caches as clear_caches
+from jax._src.compiler import serialize_autotune_results as serialize_autotune_results
+from jax._src.compiler import load_autotune_results as load_autotune_results
+from jax._src.compiler import clear_autotune_results as clear_autotune_results
 from jax._src.api import copy_to_host_async as copy_to_host_async
 from jax._src.custom_derivatives import closure_convert as closure_convert
 from jax._src.custom_derivatives import custom_gradient as custom_gradient
