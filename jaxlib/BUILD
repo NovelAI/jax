@@ -1568,7 +1568,6 @@ cc_library(
         "@xla//xla/python:nb_numpy",
         "@xla//xla/python:types",
         "@xla//xla/service:computation_placer",
-        "@xla//xla/service/gpu/autotuning:autotuner_util",
         "@xla//xla/service:hlo_graph_dumper",
         "@xla//xla/service:hlo_module_config",
         "@xla//xla/service:hlo_proto_cc",

@@ -31,6 +31,7 @@ limitations under the License.
 #include "xla/ffi/api/c_api.h"
 #include "xla/pjrt/c/pjrt_c_api.h"
 #include "xla/pjrt/c/pjrt_c_api_ffi_extension.h"
+#include "xla/pjrt/c/pjrt_c_api_gpu_autotune_extension.h"
 #include "xla/pjrt/c/pjrt_c_api_gpu_extension.h"
 #include "xla/pjrt/c/pjrt_c_api_helpers.h"
 #include "xla/pjrt/c/pjrt_c_api_status_utils.h"
@@ -292,6 +293,75 @@ void BuildGpuPluginExtension(nanobind::module_& m) {
             type_name_size, std::move(type)));
       },
       nb::arg("c_api"), nb::arg("type_name"), nb::arg("type_id"));
+
+  m.def(
+      "serialize_autotune_results",
+      xla::ValueOrThrowWrapper(
+          [](nb::capsule c_api,
+             bool as_textproto) -> absl::StatusOr<nb::bytes> {
+            const auto* api = static_cast<const PJRT_Api*>(c_api.data());
+            const PJRT_Gpu_Autotune* ext =
+                pjrt::FindExtension<PJRT_Gpu_Autotune>(
+                    api,
+                    PJRT_Extension_Type::PJRT_Extension_Type_Gpu_Autotune);
+            if (ext == nullptr) {
+              return xla::Unimplemented(
+                  "The plugin does not have the GPU autotune extension.");
+            }
+            PJRT_Gpu_Autotune_Serialize_Args args;
+            args.struct_size = PJRT_Gpu_Autotune_Serialize_Args_STRUCT_SIZE;
+            args.as_textproto = as_textproto;
+            args.out_data = nullptr;
+            args.out_size = 0;
+            RETURN_STATUS_IF_PJRT_ERROR(ext->serialize(&args), api);
+            return nb::bytes(args.out_data, args.out_size);
+          }),
+      nb::arg("c_api"), nb::arg("as_textproto") = false);
+
+  m.def(
+      "load_autotune_results",
+      [](nb::capsule c_api, nb::bytes data, bool as_textproto,
+         bool allow_override) {
+        const auto* api = static_cast<const PJRT_Api*>(c_api.data());
+        const PJRT_Gpu_Autotune* ext =
+            pjrt::FindExtension<PJRT_Gpu_Autotune>(
+                api,
+                PJRT_Extension_Type::PJRT_Extension_Type_Gpu_Autotune);
+        if (ext == nullptr) {
+          throw xla::XlaRuntimeError(
+              "The plugin does not have the GPU autotune extension.");
+        }
+        PJRT_Gpu_Autotune_Load_Args args;
+        args.struct_size = PJRT_Gpu_Autotune_Load_Args_STRUCT_SIZE;
+        args.data = data.c_str();
+        args.data_size = data.size();
+        args.as_textproto = as_textproto;
+        args.allow_override = allow_override;
+        std::unique_ptr<PJRT_Error, pjrt::PJRT_ErrorDeleter> error(
+            ext->load(&args), pjrt::MakeErrorDeleter(api));
+        xla::ThrowIfError(pjrt::PjrtErrorToStatus(error.get(), api));
+      },
+      nb::arg("c_api"), nb::arg("data"), nb::arg("as_textproto") = false,
+      nb::arg("allow_override") = false);
+
+  m.def(
+      "clear_autotune_results",
+      [](nb::capsule c_api) {
+        const auto* api = static_cast<const PJRT_Api*>(c_api.data());
+        const PJRT_Gpu_Autotune* ext =
+            pjrt::FindExtension<PJRT_Gpu_Autotune>(
+                api, PJRT_Extension_Type::PJRT_Extension_Type_Gpu_Autotune);
+        if (ext == nullptr) {
+          throw xla::XlaRuntimeError(
+              "The plugin does not have the GPU autotune extension.");
+        }
+        PJRT_Gpu_Autotune_Clear_Args args;
+        args.struct_size = PJRT_Gpu_Autotune_Clear_Args_STRUCT_SIZE;
+        std::unique_ptr<PJRT_Error, pjrt::PJRT_ErrorDeleter> error(
+            ext->clear(&args), pjrt::MakeErrorDeleter(api));
+        xla::ThrowIfError(pjrt::PjrtErrorToStatus(error.get(), api));
+      },
+      nb::arg("c_api"));
 }
 
 }  // namespace jax

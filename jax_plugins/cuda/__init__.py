@@ -21,6 +21,7 @@ import pathlib
 import traceback
 from typing import Any
 
+from jax._src import compiler as jax_compiler
 from jax._src.lib import triton
 from jax._src.lib import xla_client
 import jax._src.xla_bridge as xb
@@ -400,6 +401,14 @@ def initialize():
         functools.partial(
             cuda_plugin_extension.compile_triton_to_asm, c_api
         ),
+    )
+    jax_compiler.register_autotune_handlers(
+        serialize=functools.partial(
+            cuda_plugin_extension.serialize_autotune_results, c_api),
+        load=functools.partial(
+            cuda_plugin_extension.load_autotune_results, c_api),
+        clear=functools.partial(
+            cuda_plugin_extension.clear_autotune_results, c_api),
     )
   else:
     logger.warning('cuda_plugin_extension is not found.')

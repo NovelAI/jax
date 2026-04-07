@@ -289,6 +289,23 @@ def get_compile_options(
   return compile_options
 
 
+_autotune_serialize_handler = None
+_autotune_load_handler = None
+_autotune_clear_handler = None
+
+
+def register_autotune_handlers(serialize, load, clear):
+  """Registers GPU autotune serialize/load/clear handlers.
+
+  Called by the GPU plugin during initialization.
+  """
+  global _autotune_serialize_handler, _autotune_load_handler
+  global _autotune_clear_handler
+  _autotune_serialize_handler = serialize
+  _autotune_load_handler = load
+  _autotune_clear_handler = clear
+
+
 def serialize_autotune_results(as_textproto: bool = False) -> bytes:
   """Serializes the in-memory XLA GPU autotuning cache to bytes.
 
@@ -302,7 +319,10 @@ def serialize_autotune_results(as_textproto: bool = False) -> bytes:
   Returns:
     Serialized ``AutotuneResults`` proto as bytes.
   """
-  return _jax.serialize_autotune_results(as_textproto)
+  if _autotune_serialize_handler is None:
+    raise RuntimeError(
+        "No GPU autotune handler registered. Is the GPU plugin loaded?")
+  return _autotune_serialize_handler(as_textproto)
 
 
 def load_autotune_results(
@@ -323,12 +343,18 @@ def load_autotune_results(
     allow_override: If True, silently overwrite duplicate cache entries.
       If False (default), a duplicate key raises an error.
   """
-  _jax.load_autotune_results(data, as_textproto, allow_override)
+  if _autotune_load_handler is None:
+    raise RuntimeError(
+        "No GPU autotune handler registered. Is the GPU plugin loaded?")
+  _autotune_load_handler(data, as_textproto, allow_override)
 
 
 def clear_autotune_results() -> None:
   """Clears the in-memory XLA GPU autotuning cache."""
-  _jax.clear_autotune_results()
+  if _autotune_clear_handler is None:
+    raise RuntimeError(
+        "No GPU autotune handler registered. Is the GPU plugin loaded?")
+  _autotune_clear_handler()
 
 
 @profiler.annotate_function

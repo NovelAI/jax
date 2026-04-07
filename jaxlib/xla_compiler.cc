@@ -66,7 +66,6 @@ limitations under the License.
 #include "xla/python/nb_numpy.h"
 #include "xla/python/types.h"
 #include "xla/service/computation_placer.h"
-#include "xla/service/gpu/autotuning/autotuner_util.h"
 #include "xla/service/hlo.pb.h"
 #include "xla/service/hlo_graph_dumper.h"
 #include "xla/service/hlo_module_config.h"
@@ -103,31 +102,6 @@ void BuildXlaCompilerSubmodule(nb::module_& m) {
         });
         return ret;
       }));
-
-  m.def(
-      "serialize_autotune_results",
-      xla::ValueOrThrowWrapper([](bool as_textproto)
-                                   -> absl::StatusOr<nb::bytes> {
-        TF_ASSIGN_OR_RETURN(
-            std::string serialized,
-            xla::gpu::AutotunerUtil::SerializeAutotuneResults(as_textproto));
-        return nb::bytes(serialized.data(), serialized.size());
-      }),
-      nb::arg("as_textproto") = false);
-
-  m.def(
-      "load_autotune_results",
-      xla::ThrowIfErrorWrapper([](nb::bytes data, bool as_textproto,
-                                  bool allow_override) -> absl::Status {
-        return xla::gpu::AutotunerUtil::LoadAutotuneResults(
-            absl::string_view(data.c_str(), data.size()), as_textproto,
-            allow_override);
-      }),
-      nb::arg("data"), nb::arg("as_textproto") = false,
-      nb::arg("allow_override") = false);
-
-  m.def("clear_autotune_results",
-        []() { xla::gpu::AutotunerUtil::ClearAutotuneResults(); });
 
   // Device assignments
   nb::class_<DeviceAssignment>(m, "DeviceAssignment")
