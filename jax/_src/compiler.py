@@ -306,7 +306,8 @@ def register_autotune_handlers(serialize, load, clear):
   _autotune_clear_handler = clear
 
 
-def serialize_autotune_results(as_textproto: bool = False) -> bytes:
+def serialize_autotune_results(
+    as_textproto: bool = False, only_used: bool = False) -> bytes:
   """Serializes the in-memory XLA GPU autotuning cache to bytes.
 
   Returns the cache as a binary protobuf (or textproto if ``as_textproto`` is
@@ -315,6 +316,10 @@ def serialize_autotune_results(as_textproto: bool = False) -> bytes:
 
   Args:
     as_textproto: If True, return human-readable textproto instead of binary.
+    only_used: If True, serialize only the entries that were actually used
+      during this run -- those freshly autotuned or looked up at least once --
+      and exclude entries that were loaded (via :func:`load_autotune_results` or
+      the ``--xla_gpu_load_autotune_results_from=`` flag) but never read.
 
   Returns:
     Serialized ``AutotuneResults`` proto as bytes.
@@ -322,7 +327,7 @@ def serialize_autotune_results(as_textproto: bool = False) -> bytes:
   if _autotune_serialize_handler is None:
     raise RuntimeError(
         "No GPU autotune handler registered. Is the GPU plugin loaded?")
-  return _autotune_serialize_handler(as_textproto)
+  return _autotune_serialize_handler(as_textproto, only_used)
 
 
 def load_autotune_results(

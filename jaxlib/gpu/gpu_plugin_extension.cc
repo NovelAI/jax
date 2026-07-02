@@ -297,8 +297,8 @@ void BuildGpuPluginExtension(nanobind::module_& m) {
   m.def(
       "serialize_autotune_results",
       xla::ValueOrThrowWrapper(
-          [](nb::capsule c_api,
-             bool as_textproto) -> absl::StatusOr<nb::bytes> {
+          [](nb::capsule c_api, bool as_textproto,
+             bool only_used) -> absl::StatusOr<nb::bytes> {
             const auto* api = static_cast<const PJRT_Api*>(c_api.data());
             const PJRT_Gpu_Autotune* ext =
                 pjrt::FindExtension<PJRT_Gpu_Autotune>(
@@ -313,10 +313,12 @@ void BuildGpuPluginExtension(nanobind::module_& m) {
             args.as_textproto = as_textproto;
             args.out_data = nullptr;
             args.out_size = 0;
+            args.only_used = only_used;
             RETURN_STATUS_IF_PJRT_ERROR(ext->serialize(&args), api);
             return nb::bytes(args.out_data, args.out_size);
           }),
-      nb::arg("c_api"), nb::arg("as_textproto") = false);
+      nb::arg("c_api"), nb::arg("as_textproto") = false,
+      nb::arg("only_used") = false);
 
   m.def(
       "load_autotune_results",
