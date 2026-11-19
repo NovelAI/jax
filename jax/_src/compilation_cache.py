@@ -322,7 +322,8 @@ def is_executable_in_cache(backend, cache_key: str) -> bool:
 
 
 def get_executable_and_time(
-    cache_key: str, compile_options, backend, executable_devices
+    cache_key: str, compile_options, backend, executable_devices,
+    host_callbacks=(),
 ) -> tuple[xla_client.LoadedExecutable | None, int | None]:
   """Returns the cached executable and its compilation time if present, or None
   otherwise.
@@ -339,7 +340,8 @@ def get_executable_and_time(
   serialized_executable, compile_time = extract_executable_and_time(
       executable_and_time)
   xla_executable_deserialized = backend.deserialize_executable(
-      serialized_executable, executable_devices, compile_options)
+      serialized_executable, executable_devices, compile_options,
+      host_callbacks=list(host_callbacks))
   return xla_executable_deserialized, compile_time
 
 

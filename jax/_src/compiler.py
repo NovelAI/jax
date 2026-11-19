@@ -423,11 +423,19 @@ def compile_or_get_cached(
         backend, computation, executable_devices, compile_options,
         host_callbacks)
 
+  if host_callbacks:
+    # The executable refers to its host callbacks by position only (TPU: send/recv channel ids; CPU/GPU:
+    # an index into the executable's callback list), so a cached entry is valid with the callbacks of the
+    # lowering that looked it up, handed to deserialize_executable. The suffix keeps these entries away
+    # from JAX builds that would load them without callbacks (libtpu aborts on the first Send).
+    cache_key = f"{cache_key}-hostcb{len(host_callbacks)}"
+
   monitoring.record_event('/jax/compilation_cache/compile_requests_use_cache')
 
   cache_retrieval_start = time.monotonic()
   retrieved_executable, retrieved_compile_time = _cache_read(
-      module_name, cache_key, compile_options, backend, executable_devices)
+      module_name, cache_key, compile_options, backend, executable_devices,
+      host_callbacks)
   cache_retrieval_time = time.monotonic() - cache_retrieval_start
 
   if retrieved_executable is not None:
@@ -769,13 +777,15 @@ def _is_executable_in_cache(backend, cache_key) -> bool:
 def _cache_read(
     module_name: str, cache_key: str, compile_options: xc.CompileOptions,
     backend: xc.Client, executable_devices: xc.DeviceList,
+    host_callbacks: Sequence[Any] = (),
 ) -> tuple[xc.LoadedExecutable | None, int | None]:
   """Looks up the `computation` and it's compilation time in the persistent
   compilation cache repository.
   """
   try:
     return compilation_cache.get_executable_and_time(
-        cache_key, compile_options, backend, executable_devices)
+        cache_key, compile_options, backend, executable_devices,
+        host_callbacks)
   except Exception as ex:
     if _should_raise_persistent_cache_error(ex):
       raise
@@ -802,13 +812,6 @@ def _cache_write(cache_key: str,
   if distributed.global_state.process_id != 0:
     logger.log(log_priority,
                "Not writing persistent cache entry since process_id != 0")
-    return
-
-  if host_callbacks:
-    logger.log(
-        log_priority,
-        "Not writing persistent cache entry for '%s' because it uses host "
-        "callbacks (e.g. from jax.debug.print or breakpoint)", module_name)
     return
 
   min_compile_time = config.persistent_cache_min_compile_time_secs.value

@@ -45,6 +45,7 @@ from jax._src import test_warning_util
 from jax._src import xla_bridge
 from jax._src.compilation_cache_interface import CacheInterface
 from jax._src.lib import xla_client as xc
+from jax.experimental import io_callback
 from jax.sharding import PartitionSpec as P
 import numpy as np
 
@@ -534,37 +535,17 @@ class CompilationCacheTest(CompilationCacheTestCase):
           config.compilation_cache_dir(tmp_dir),
       ):
         # omitting writing to cache because compilation is too fast
-        pure_fn = lambda a: jnp.array(1, dtype=jnp.int32)
         with config.persistent_cache_min_compile_time_secs(1e5):
           with self.assertLogs(level="DEBUG") as log:
-            jit(
-                lambda x: x
-                + jax.pure_callback(
-                    pure_fn, jax.ShapeDtypeStruct((), jnp.int32), x
-                )
-            )(1)
+            jit(lambda x: x + 1)(1)
           msg1 = "Not writing persistent cache entry"
-          msg2 = "because it uses host callbacks"
+          msg2 = "because it took <"
           self.assertTrue(
               msg_exists_in_logs(msg1, log.records, logging.WARNING)
           )
           self.assertTrue(
               msg_exists_in_logs(msg2, log.records, logging.WARNING)
           )
-
-        # omitting writing to cache because host callback is present
-        pure_fn = lambda a: jnp.array(1, dtype=jnp.int32)
-        with self.assertLogs(level="DEBUG") as log:
-          jit(
-              lambda x: x
-              + jax.pure_callback(
-                  pure_fn, jax.ShapeDtypeStruct((), jnp.int32), x
-              )
-          )(1)
-        msg1 = "Not writing persistent cache entry"
-        msg2 = "because it uses host callbacks"
-        self.assertTrue(msg_exists_in_logs(msg1, log.records, logging.WARNING))
-        self.assertTrue(msg_exists_in_logs(msg2, log.records, logging.WARNING))
 
         # omitting writing to cache because binary is too small
         with config.persistent_cache_min_entry_size_bytes(int(1e9)):
@@ -596,18 +577,6 @@ class CompilationCacheTest(CompilationCacheTestCase):
         self.assertFalse(msg_exists_in_logs(msg1, log.records, logging.WARNING))
         self.assertFalse(msg_exists_in_logs(msg2, log.records, logging.WARNING))
 
-      # omitting writing to cache because host callback is present
-      pure_fn = lambda a: jnp.array(1, dtype=jnp.int32)
-      with self.assertLogs(level="DEBUG") as log:
-        jit(
-            lambda x: x
-            + jax.pure_callback(pure_fn, jax.ShapeDtypeStruct((), jnp.int32), x)
-        )(1)
-      msg1 = "Not writing persistent cache entry"
-      msg2 = "because it uses host callbacks"
-      self.assertFalse(msg_exists_in_logs(msg1, log.records, logging.WARNING))
-      self.assertFalse(msg_exists_in_logs(msg2, log.records, logging.WARNING))
-
       # omitting writing to cache because binary is too small
       with config.persistent_cache_min_entry_size_bytes(int(1e9)):
         with self.assertLogs(level="DEBUG") as log:
@@ -623,6 +592,51 @@ class CompilationCacheTest(CompilationCacheTestCase):
           jit(lambda x: x**2)(1)
       msg = "to persistent compilation cache with key"
       self.assertFalse(msg_exists_in_logs(msg, log.records, logging.WARNING))
+
+  def _hostcb_keys(self):
+    return [k for k in cc._cache._cache if "-hostcb" in k]
+
+  def test_host_callbacks_round_trip(self):
+    # Executables with host callbacks are cached under a suffixed key and get the looking-up lowering's callbacks back on a hit.
+    seen = []
+
+    def record(x):
+      x = np.asarray(x)
+      seen.append(x.tolist())
+      return (x * 2).astype(np.float32)
+
+    def f(x):
+      def body(i, c):
+        c = c + 1
+        return io_callback(record, jax.ShapeDtypeStruct(c.shape, c.dtype), c, ordered=True)
+
+      return lax.fori_loop(0, 3, body, x)
+
+    x = np.zeros((4,), np.float32)
+    expected = np.full((4,), 14.0, np.float32)
+    np.testing.assert_array_equal(jit(f)(x), expected)
+    (key,) = self._hostcb_keys()
+    self.assertTrue(key.startswith("jit_f-") and key.endswith("-hostcb1"), key)
+
+    # With the in-memory caches cleared, the same function loads from the persistent cache, and the loaded executable calls this lowering's callback.
+    jax.clear_caches()
+    seen.clear()
+    with config.log_compiles(True), self.assertLogs(level="WARNING") as log:
+      np.testing.assert_array_equal(jit(f)(x), expected)
+    self.assertTrue(msg_exists_in_logs(f"Persistent compilation cache hit for 'jit_f' with key '{key}'", log.records, logging.WARNING))
+    self.assertEqual(seen, [[1.0] * 4, [3.0] * 4, [7.0] * 4])
+    self.assertEqual(self._hostcb_keys(), [key])
+
+  def test_pure_callback_round_trip(self):
+    def g(x):
+      return x + jax.pure_callback(lambda a: np.asarray(np.asarray(a) + 10, dtype=np.int32), jax.ShapeDtypeStruct((), jnp.int32), x)
+
+    self.assertEqual(int(jit(g)(np.int32(1))), 12)
+    (key,) = self._hostcb_keys()
+    jax.clear_caches()
+    with config.log_compiles(True), self.assertLogs(level="WARNING") as log:
+      self.assertEqual(int(jit(g)(np.int32(1))), 12)
+    self.assertTrue(msg_exists_in_logs(f"Persistent compilation cache hit for 'jit_g' with key '{key}'", log.records, logging.WARNING))
 
   @parameterized.parameters(0, 1)
   def test_cache_write_with_process_restriction(self, process_id):
